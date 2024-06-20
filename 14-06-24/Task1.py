@@ -94,7 +94,6 @@ async def root():
 
     Returns:
     --------
-    
         dict: JSON response with a welcome message.
     """
     
