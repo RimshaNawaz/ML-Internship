@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <title>LLM Talking Avatar</title>
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+  <style>
+    body {
+      background-color: #f8f9fa;
+    }
+    .container {
+      margin-top: 50px;
+      text-align: center;
+    }
+    .avatar-container {
+      width: 300px;
+      height: 300px;
+      margin: 0 auto 20px;
+      overflow: hidden;
+      position: relative;
+    }
+    .avatar {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .video-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: none;
+    }
+    #response {
+      margin-top: 20px;
+      padding: 20px;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    }
+    .audio-visualizer {
+      width: 100%;
+      height: 20px;
+      background-color: #e9ecef;
+      border-radius: 5px;
+      margin-top: 10px;
+      display: none; /* Initially hide the visualizer */
+    }
+    .audio-visualizer .bar {
+      width: 2px;
+      height: 100%;
+      display: inline-block;
+      background-color: #007bff;
+      margin: 0 1px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>LLM Talking Avatar</h1>
+     <!-- Avatar Container: Displays either a still image or a video -->
+    <div class="avatar-container" id="avatar_container">
+      <img src="/static/images/avatar_still.png" class="avatar" id="avatar_image">
+      <div class="video-overlay" id="video_overlay">
+        <video autoplay muted loop class="avatar">
+          <source src="/static/videos/avatar_talking.mp4" type="video/mp4">
+          Your browser does not support the video tag.
+        </video>
+      </div>
+    </div>
+    <div class="input-group mb-3">
+      <input type="text" id="user_message" class="form-control" placeholder="Enter your message" aria-label="User message" aria-describedby="button-send">
+      <div class="input-group-append">
+        <button class="btn btn-primary" type="button" id="button-send" onclick="sendMessage()">Send</button>
+      </div>
+    </div>
+    <div id="response"></div>
+    <div class="audio-visualizer" id="audio_visualizer"></div>
+  </div>
+  <script>
+    /*
+     * Sends the user's message to the server and handles the response.
+     */
+    function sendMessage() {
+      const userMessage = document.getElementById('user_message').value;
+      fetch('/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ message: userMessage })
+      })
+      .then(response => response.json())
+      .then(data => {
+        const responseText = data.choices[0].message.content;
+        displayResponse(responseText);
+        speak(responseText);
+      })
+      .catch(error => console.error('Error:', error));
+    }
+     /**
+     * Displays the model's response in the response div.
+     * @param {string} text - The response text to display.
+     */
+    function displayResponse(text) {
+      document.getElementById('response').innerText = text;
+    }
+
+    function speak(text) {
+      const avatarContainer = document.getElementById('avatar_container');
+      const videoOverlay = document.getElementById('video_overlay');
+      const avatarImage = document.getElementById('avatar_image');
+      const visualizer = document.getElementById('audio_visualizer');
+
+      // Hide image and show video overlay
+      avatarImage.style.display = 'none';
+      videoOverlay.style.display = 'block';
+
+      const speech = new SpeechSynthesisUtterance(text);
+      speech.lang = 'en-US';
+      speech.volume = 1;
+      speech.rate = 1;
+      speech.pitch = 1;
+
+      // Show the visualizer
+      visualizer.style.display = 'block';
+
+      // Speech synthesis event listeners
+      speech.onstart = () => {
+        // Start visualizing the speech
+        visualizeSpeech(speech);
+      };
+
+      speech.onend = () => {
+        // Stop visualizing and reset avatar to image
+        stopVisualizing();
+        avatarImage.style.display = 'block';
+        videoOverlay.style.display = 'none';
+      };
+
+      // Start speaking
+      window.speechSynthesis.speak(speech);
+    }
+   
+    // Visualizes the speech synthesis process using an audio visualizer.
+    // @param {SpeechSynthesisUtterance} speech - The speech synthesis utterance to visualize.
+     
+    function visualizeSpeech(speech) {
+      const visualizer = document.getElementById('audio_visualizer');
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = audioContext.createAnalyser();
+      const microphone = audioContext.createMediaStreamSource(speechSynthesis.getAudioContext().destination.stream);
+
+      microphone.connect(analyser);
+      analyser.connect(audioContext.destination);
+      analyser.fftSize = 256;
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      const width = visualizer.offsetWidth;
+      const height = visualizer.offsetHeight;
+
+      const barWidth = (width / bufferLength) * 2.5;
+      let barHeight;
+      let x = 0;
+
+      function draw() {
+        const drawVisual = requestAnimationFrame(draw);
+        analyser.getByteFrequencyData(dataArray);
+
+        visualizer.innerHTML = '';
+        for (let i = 0; i < bufferLength; i++) {
+          barHeight = dataArray[i];
+
+          const bar = document.createElement('span');
+          bar.classList.add('bar');
+          bar.style.height = `${barHeight}px`;
+          bar.style.width = `${barWidth}px`;
+          bar.style.left = `${x}px`;
+          visualizer.appendChild(bar);
+
+          x += barWidth + 1;
+        }
+      }
+
+      draw();
+    }
+     
+      // Stops the audio visualization and hides the visualizer.
+     
+    function stopVisualizing() {
+      const visualizer = document.getElementById('audio_visualizer');
+      visualizer.style.display = 'none'; // Hide the visualizer
+      visualizer.innerHTML = ''; // Clear visualizer content
+    }
+  </script>
+</body>
+</html>
